@@ -87,7 +87,6 @@ class GeminiService:
                 config=gtypes.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT,
                     response_mime_type="application/json",
-                    response_schema=Itinerary,
                     temperature=self._settings.GEMINI_TEMPERATURE,
                     max_output_tokens=self._settings.GEMINI_MAX_OUTPUT_TOKENS,
                 ),
@@ -117,9 +116,13 @@ class GeminiService:
     @staticmethod
     def _build_user_prompt(req: TripRequest) -> str:
         """Build a deterministic, structured prompt from the validated request."""
+        schema_json = json.dumps(Itinerary.model_json_schema(), indent=2)
         return (
             "Plan a trip with the following parameters. "
-            "Return JSON matching the supplied schema only.\n\n"
+            "Return ONLY valid JSON matching the following JSON Schema.\n\n"
+            "=== SCHEMA ===\n"
+            f"{schema_json}\n\n"
+            "=== PARAMETERS ===\n"
             f"{req.model_dump_json(indent=2)}"
         )
 
@@ -141,7 +144,9 @@ class GeminiService:
         delta_prompt = (
             "An existing itinerary needs to be revised due to a live event. "
             "Keep changes minimal: only modify what the event affects. "
-            "Output the FULL updated itinerary in the schema format.\n\n"
+            "Output the FULL updated itinerary as JSON matching the following JSON Schema.\n\n"
+            "=== SCHEMA ===\n"
+            f"{json.dumps(Itinerary.model_json_schema(), indent=2)}\n\n"
             f"REASON:\n{reason}\n\n"
             f"ORIGINAL_ITINERARY:\n{original.model_dump_json()}\n\n"
             f"ORIGINAL_REQUEST:\n{req.model_dump_json()}"
@@ -153,7 +158,6 @@ class GeminiService:
             config=gtypes.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT,
                 response_mime_type="application/json",
-                response_schema=Itinerary,
                 temperature=0.4,  # cooler — small, surgical edits
                 max_output_tokens=self._settings.GEMINI_MAX_OUTPUT_TOKENS,
             ),

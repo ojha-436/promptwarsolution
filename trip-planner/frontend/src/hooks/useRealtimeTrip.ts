@@ -1,14 +1,11 @@
 "use client";
 
-import { doc, onSnapshot } from "firebase/firestore";
 import { useEffect, useState } from "react";
-import { firebaseAuth, firestore } from "@/lib/firebase";
+import { getTrip } from "@/lib/api";
 import type { Trip } from "@/types/trip";
 
 /**
- * Subscribe to /users/{uid}/trips/{tripId} and stream updates straight into
- * React state. This is the magic for "real-time updates" — when the Pub/Sub
- * worker writes a re-planned itinerary to Firestore, this fires automatically.
+ * Poll the backend API for updates since Firebase Client Auth is disabled.
  */
 export function useRealtimeTrip(tripId: string | null): {
   trip: Trip | null;
@@ -20,26 +17,35 @@ export function useRealtimeTrip(tripId: string | null): {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    const uid = firebaseAuth.currentUser?.uid;
-    if (!uid || !tripId) {
+    if (!tripId) {
       setLoading(false);
       return;
     }
-    const ref = doc(firestore, "users", uid, "trips", tripId);
-    const unsub = onSnapshot(
-      ref,
-      (snap) => {
-        if (snap.exists()) {
-          setTrip(snap.data() as Trip);
+
+    let mounted = true;
+    const fetchTrip = async () => {
+      try {
+        const data = await getTrip(tripId);
+        if (mounted) {
+          setTrip(data);
+          setLoading(false);
+          setError(null);
         }
-        setLoading(false);
-      },
-      (err) => {
-        setError(err);
-        setLoading(false);
-      },
-    );
-    return () => unsub();
+      } catch (err: any) {
+        if (mounted) {
+          setError(err instanceof Error ? err : new Error(String(err)));
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchTrip();
+    const intervalId = setInterval(fetchTrip, 3000);
+
+    return () => {
+      mounted = false;
+      clearInterval(intervalId);
+    };
   }, [tripId]);
 
   return { trip, loading, error };

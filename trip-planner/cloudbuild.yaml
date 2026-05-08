@@ -27,7 +27,7 @@ steps:
       - -c
       - |
         cd frontend
-        npm ci --no-audit --no-fund
+        npm install --no-audit --no-fund
         npm run typecheck
         npm test -- --watchAll=false
 
@@ -37,7 +37,7 @@ steps:
     args:
       - build
       - -t
-      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/api:$SHORT_SHA
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/api:$BUILD_ID
       - -f
       - backend/Dockerfile
       - backend
@@ -48,7 +48,8 @@ steps:
     args:
       - build
       - -t
-      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/web:$SHORT_SHA
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/web:$BUILD_ID
+      - --build-arg=BACKEND_API_URL=https://wanderly-api-173717625915.asia-south1.run.app
       - -f
       - frontend/Dockerfile
       - frontend
@@ -59,14 +60,14 @@ steps:
     name: gcr.io/cloud-builders/docker
     args:
       - push
-      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/api:$SHORT_SHA
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/api:$BUILD_ID
     waitFor: [build-backend]
 
   - id: push-frontend
     name: gcr.io/cloud-builders/docker
     args:
       - push
-      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/web:$SHORT_SHA
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/web:$BUILD_ID
     waitFor: [build-frontend]
 
   # ── Deploy ────────────────────────────────────────────────────────────
@@ -77,10 +78,12 @@ steps:
       - run
       - deploy
       - wanderly-api
-      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/api:$SHORT_SHA
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/api:$BUILD_ID
       - --region=${_REGION}
       - --platform=managed
       - --service-account=wanderly-backend@$PROJECT_ID.iam.gserviceaccount.com
+      - --set-env-vars=GCP_PROJECT=$PROJECT_ID,ENV=prod,AUTH_DISABLED=true
+      - --set-secrets=GEMINI_API_KEY=gemini-api-key:latest
       - --no-allow-unauthenticated
       - --quiet
     waitFor: [push-backend]
@@ -92,10 +95,11 @@ steps:
       - run
       - deploy
       - wanderly-web
-      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/web:$SHORT_SHA
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/web:$BUILD_ID
       - --region=${_REGION}
       - --platform=managed
       - --service-account=wanderly-frontend@$PROJECT_ID.iam.gserviceaccount.com
+      - --set-env-vars=BACKEND_API_URL=https://wanderly-api-173717625915.asia-south1.run.app
       - --allow-unauthenticated
       - --quiet
     waitFor: [push-frontend]

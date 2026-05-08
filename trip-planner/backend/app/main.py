@@ -43,10 +43,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         firebase_admin.initialize_app(options={"projectId": settings.FIREBASE_PROJECT_ID or settings.GCP_PROJECT})
 
     app.state.settings = settings
-    app.state.gemini = GeminiService(settings)
-    app.state.firestore = FirestoreService()
-    app.state.places = PlacesService(settings)
-    app.state.pubsub = PubSubService(settings)
+    if not hasattr(app.state, "gemini"):
+        app.state.gemini = GeminiService(settings)
+    if not hasattr(app.state, "firestore"):
+        app.state.firestore = FirestoreService()
+    if not hasattr(app.state, "places"):
+        app.state.places = PlacesService(settings)
+    if not hasattr(app.state, "pubsub"):
+        app.state.pubsub = PubSubService(settings)
     log.info("startup", env=settings.ENV)
     yield
     log.info("shutdown")

@@ -112,7 +112,9 @@ resource "google_pubsub_subscription" "trip_events_replan" {
 
 resource "google_secret_manager_secret" "gemini_key" {
   secret_id = "gemini-api-key"
-  replication { auto {} }
+  replication {
+    auto {}
+  }
   depends_on = [google_project_service.apis]
 }
 
@@ -137,12 +139,26 @@ resource "google_cloud_run_v2_service" "backend" {
     }
     containers {
       image = var.backend_image
-      ports { container_port = 8080 }
+      ports {
+        container_port = 8080
+      }
 
-      env { name = "ENV" value = "prod" }
-      env { name = "GCP_PROJECT" value = var.project_id }
-      env { name = "GCP_REGION" value = var.region }
-      env { name = "FIREBASE_PROJECT_ID" value = var.project_id }
+      env {
+        name  = "ENV"
+        value = "prod"
+      }
+      env {
+        name  = "GCP_PROJECT"
+        value = var.project_id
+      }
+      env {
+        name  = "GCP_REGION"
+        value = var.region
+      }
+      env {
+        name  = "FIREBASE_PROJECT_ID"
+        value = var.project_id
+      }
       env {
         name = "GEMINI_API_KEY"
         value_source {
@@ -152,20 +168,30 @@ resource "google_cloud_run_v2_service" "backend" {
           }
         }
       }
-      env { name = "CORS_ORIGINS" value = jsonencode([var.frontend_url]) }
+      env {
+        name  = "CORS_ORIGINS"
+        value = jsonencode([var.frontend_url])
+      }
 
       resources {
-        limits = { cpu = "1", memory = "512Mi" }
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
       }
       startup_probe {
-        http_get { path = "/health" }
+        http_get {
+          path = "/health"
+        }
         initial_delay_seconds = 5
         timeout_seconds       = 3
         period_seconds        = 5
         failure_threshold     = 3
       }
       liveness_probe {
-        http_get { path = "/health" }
+        http_get {
+          path = "/health"
+        }
         period_seconds = 30
       }
     }
@@ -196,11 +222,22 @@ resource "google_cloud_run_v2_service" "frontend" {
     }
     containers {
       image = var.frontend_image
-      ports { container_port = 3000 }
-      env { name = "NEXT_PUBLIC_API_BASE" value = google_cloud_run_v2_service.backend.uri }
-      env { name = "NEXT_PUBLIC_FIREBASE_PROJECT_ID" value = var.project_id }
+      ports {
+        container_port = 3000
+      }
+      env {
+        name  = "NEXT_PUBLIC_API_BASE"
+        value = google_cloud_run_v2_service.backend.uri
+      }
+      env {
+        name  = "NEXT_PUBLIC_FIREBASE_PROJECT_ID"
+        value = var.project_id
+      }
       resources {
-        limits = { cpu = "1", memory = "512Mi" }
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
       }
     }
   }

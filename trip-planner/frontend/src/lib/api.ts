@@ -5,7 +5,7 @@
 import type { Trip, TripRequest } from "@/types/trip";
 import { firebaseAuth } from "./firebase";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8080";
+const API_BASE = "/api";
 
 async function authedFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const user = firebaseAuth.currentUser;

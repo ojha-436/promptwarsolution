@@ -30,4 +30,4 @@ USER 1001
 EXPOSE 8080
 
 # Cloud Run sends SIGTERM and respects PORT
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --workers 2 --log-config=- --no-access-log"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --workers 2 --no-access-log"]
