@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Per-user isolation. The same rule covers writes from the API
+    // (verified-token uid matches the path) and direct browser reads.
+    match /users/{userId}/trips/{tripId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    // Default-deny for anything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

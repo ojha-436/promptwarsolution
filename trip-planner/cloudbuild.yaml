@@ -1,0 +1,107 @@
+# CI/CD pipeline. Trigger on every push to main; deploys to Cloud Run.
+#
+# Required substitutions (set on the trigger):
+#   _REGION       (e.g. asia-south1)
+#   _AR_REPO      (Artifact Registry repo, e.g. wanderly)
+#
+# Pre-reqs in the project: Artifact Registry repo created, Cloud Build
+# service account granted roles/run.admin and roles/iam.serviceAccountUser.
+
+steps:
+  # ── Lint + tests ──────────────────────────────────────────────────────
+  - id: backend-test
+    name: python:3.12-slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        cd backend
+        pip install --no-cache-dir -r requirements.txt
+        ruff check app
+        pytest --cov=app --cov-fail-under=80
+
+  - id: frontend-test
+    name: node:20
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        cd frontend
+        npm ci --no-audit --no-fund
+        npm run typecheck
+        npm test -- --watchAll=false
+
+  # ── Build ─────────────────────────────────────────────────────────────
+  - id: build-backend
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/api:$SHORT_SHA
+      - -f
+      - backend/Dockerfile
+      - backend
+    waitFor: [backend-test]
+
+  - id: build-frontend
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/web:$SHORT_SHA
+      - -f
+      - frontend/Dockerfile
+      - frontend
+    waitFor: [frontend-test]
+
+  # ── Push ──────────────────────────────────────────────────────────────
+  - id: push-backend
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/api:$SHORT_SHA
+    waitFor: [build-backend]
+
+  - id: push-frontend
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/web:$SHORT_SHA
+    waitFor: [build-frontend]
+
+  # ── Deploy ────────────────────────────────────────────────────────────
+  - id: deploy-backend
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - wanderly-api
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/api:$SHORT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --service-account=wanderly-backend@$PROJECT_ID.iam.gserviceaccount.com
+      - --no-allow-unauthenticated
+      - --quiet
+    waitFor: [push-backend]
+
+  - id: deploy-frontend
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - wanderly-web
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/web:$SHORT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --service-account=wanderly-frontend@$PROJECT_ID.iam.gserviceaccount.com
+      - --allow-unauthenticated
+      - --quiet
+    waitFor: [push-frontend]
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+
+timeout: 1800s
