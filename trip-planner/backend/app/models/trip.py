@@ -118,6 +118,8 @@ class TripRequest(BaseModel):
 
 
 class Activity(BaseModel):
+    """A single scheduled activity within a day (LLM output + stored shape)."""
+
     model_config = ConfigDict(extra="forbid")
 
     title: Annotated[str, Field(min_length=1, max_length=140)]
@@ -136,6 +138,8 @@ class Activity(BaseModel):
 
 
 class DayPlan(BaseModel):
+    """One day of the itinerary: an ordered list of activities plus daily totals."""
+
     model_config = ConfigDict(extra="forbid")
 
     day_index: Annotated[int, Field(ge=1, le=30)]
@@ -147,6 +151,8 @@ class DayPlan(BaseModel):
 
 
 class Itinerary(BaseModel):
+    """The full generated plan — both the LLM's structured output and the stored plan."""
+
     model_config = ConfigDict(extra="forbid")
 
     destination: str
@@ -177,6 +183,8 @@ class Trip(BaseModel):
 
 
 class TripEvent(BaseModel):
+    """A real-time event published to Pub/Sub to trigger an itinerary re-plan."""
+
     model_config = ConfigDict(extra="forbid")
 
     type: EventType

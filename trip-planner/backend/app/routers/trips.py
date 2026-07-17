@@ -115,6 +115,7 @@ async def get_trip(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     fs: Annotated[FirestoreService, Depends(_firestore)],
 ) -> Trip:
+    """Fetch one trip by id, scoped to the authenticated user (404 if absent)."""
     trip = fs.get(user.uid, trip_id)
     if trip is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "trip not found")
@@ -126,6 +127,7 @@ async def list_trips(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     fs: Annotated[FirestoreService, Depends(_firestore)],
 ) -> list[Trip]:
+    """List the authenticated user's trips, newest first."""
     return fs.list_for_user(user.uid)
 
 
