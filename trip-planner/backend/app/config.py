@@ -9,7 +9,7 @@ references (e.g. GEMINI_API_KEY: projects/$PROJECT/secrets/gemini-api-key).
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, HttpUrl
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = 30
     MAX_TRIP_DAYS: int = 30
     MAX_TRAVELERS: int = 12
+    MAX_REQUEST_BYTES: int = 262_144  # 256 KiB — reject oversized bodies early
 
     # ── CORS ──────────────────────────────────────────────────────────────
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
@@ -57,4 +58,4 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     """Cached settings instance — read once per process."""
-    return Settings()  # type: ignore[call-arg]
+    return Settings()

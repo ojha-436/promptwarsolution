@@ -12,9 +12,7 @@ Firestore — which streams to the user's browser via onSnapshot.
 
 from __future__ import annotations
 
-import json
-
-from google.cloud import pubsub_v1  # type: ignore[attr-defined]
+from google.cloud import pubsub_v1
 
 from app.config import Settings
 from app.models import TripEvent
@@ -40,6 +38,6 @@ class PubSubService:
             trip_id=event.trip_id,
             event_type=event.type.value,
         )
-        msg_id = future.result(timeout=10)
+        msg_id: str = future.result(timeout=10)
         log.info("pubsub.published", trip_id=event.trip_id, type=event.type.value, msg_id=msg_id)
         return msg_id

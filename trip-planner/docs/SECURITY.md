@@ -57,9 +57,17 @@ Threat model summary, controls, and how each is exercised in tests.
 
 ## Rate limiting
 
-* `slowapi` token bucket (default 30/min/IP). Not a substitute for Cloud
-  Armor — it's an in-process safety net that survives even if the WAF rule
-  is misconfigured.
+* `slowapi` token bucket (default 30/min/IP), **enforced** via
+  `SlowAPIMiddleware` (a stricter per-auth limit can be layered on top). Not a
+  substitute for Cloud Armor — it's an in-process safety net that survives even
+  if the WAF rule is misconfigured. Enforcement is covered by
+  `backend/tests/test_rate_limit.py`.
+
+## Request size limits
+
+* `MaxBodySizeMiddleware` rejects request bodies over 256 KiB with HTTP 413
+  before they are buffered or parsed — a cheap defence against
+  memory-exhaustion payloads (tested in `test_security.py`).
 
 ## Containers
 
@@ -83,13 +91,16 @@ Threat model summary, controls, and how each is exercised in tests.
 | A09 Logging Failures | Structured JSON logs to Cloud Logging w/ request_id |
 | A10 SSRF | API only calls Google APIs via SDKs — no user-supplied URL is ever fetched |
 
-## Tested in `backend/tests/test_security.py`
+## Tested in `backend/tests/`
 
-* Security headers present on every response.
+* Security headers present on every response (`test_security.py`).
 * Request-ID propagates verbatim.
-* Oversized destination payload rejected (422).
-* `extra="forbid"` rejects polluted bodies.
-* 404 messages do not leak resource ownership.
+* Oversized destination payload rejected (422); >256 KiB body rejected (413).
+* `extra="forbid"` rejects polluted bodies; the events endpoint is strictly
+  typed (`test_events.py`).
+* 404 messages do not leak resource ownership; auth rejections return a
+  generic message and never echo the verification error (`test_auth.py`).
+* Rate limiting actually returns 429 past the budget (`test_rate_limit.py`).
 
 ## Open follow-ups (deliberately deferred)
 

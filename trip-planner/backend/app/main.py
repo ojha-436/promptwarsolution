@@ -11,19 +11,20 @@ Wires:
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
-import firebase_admin  # type: ignore[import-untyped]
+import firebase_admin
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
 from app.config import get_settings
-from app.middleware.security import SecurityHeadersMiddleware
+from app.middleware.security import MaxBodySizeMiddleware, SecurityHeadersMiddleware
 from app.routers import health, trips
 from app.services.firestore_service import FirestoreService
 from app.services.gemini_service import GeminiService
@@ -40,7 +41,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Firebase Admin uses Application Default Credentials on Cloud Run.
     if not firebase_admin._apps and not settings.AUTH_DISABLED:
-        firebase_admin.initialize_app(options={"projectId": settings.FIREBASE_PROJECT_ID or settings.GCP_PROJECT})
+        project_id = settings.FIREBASE_PROJECT_ID or settings.GCP_PROJECT
+        firebase_admin.initialize_app(options={"projectId": project_id})
 
     app.state.settings = settings
     if not hasattr(app.state, "gemini"):
@@ -73,6 +75,11 @@ def create_app() -> FastAPI:
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
     app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(MaxBodySizeMiddleware, max_bytes=settings.MAX_REQUEST_BYTES)
+    # SlowAPIMiddleware is what actually ENFORCES `default_limits` — without it
+    # the Limiter above is inert. Added inside CORS so the browser still gets
+    # CORS headers on a 429 response.
+    app.add_middleware(SlowAPIMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,

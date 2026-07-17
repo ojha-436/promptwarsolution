@@ -46,7 +46,7 @@ class PlacesService:
         query = f"{activity.location_name}, {destination}"
         try:
             assert self._client is not None
-            results: list[dict[str, Any]] = self._client.geocode(query)  # type: ignore[no-untyped-call]
+            results: list[dict[str, Any]] = self._client.geocode(query)
         except Exception as exc:  # pragma: no cover
             log.warning("maps.error", query=query, error=str(exc))
             return

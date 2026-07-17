@@ -5,16 +5,16 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
-from typing import Annotated
+from datetime import UTC, datetime
+from typing import Annotated, cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 
 from app.middleware.auth import AuthenticatedUser, get_current_user
 from app.models import (
-    EventType,
     Trip,
     TripEvent,
+    TripEventRequest,
     TripRequest,
     TripStatus,
 )
@@ -32,19 +32,19 @@ router = APIRouter(prefix="/v1/trips", tags=["trips"])
 
 
 def _firestore(request: Request) -> FirestoreService:
-    return request.app.state.firestore
+    return cast(FirestoreService, request.app.state.firestore)
 
 
 def _gemini(request: Request) -> GeminiService:
-    return request.app.state.gemini
+    return cast(GeminiService, request.app.state.gemini)
 
 
 def _places(request: Request) -> PlacesService:
-    return request.app.state.places
+    return cast(PlacesService, request.app.state.places)
 
 
 def _pubsub(request: Request) -> PubSubService:
-    return request.app.state.pubsub
+    return cast(PubSubService, request.app.state.pubsub)
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────
@@ -64,7 +64,7 @@ async def create_trip(
     runs in the background and the client subscribes to Firestore for the
     final READY/ FAILED state.
     """
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     trip = Trip(
         id=uuid.uuid4().hex,
         user_id=user.uid,
@@ -92,12 +92,21 @@ def _run_planning(
         itinerary = places.enrich(itinerary)
         trip.itinerary = itinerary
         trip.status = TripStatus.READY
-        trip.updated_at = datetime.now(tz=timezone.utc)
+        trip.updated_at = datetime.now(tz=UTC)
         fs.save(trip)
         log.info("trip.ready", trip_id=trip.id)
     except GeminiUnavailable as exc:
+        # Expected failure mode: the model was unreachable or returned bad output.
         log.error("trip.failed", trip_id=trip.id, error=str(exc))
         fs.update_status(trip.user_id, trip.id, TripStatus.FAILED)
+    except Exception as exc:  # noqa: BLE001 — a background task must never leave a trip stuck
+        # Any other failure (e.g. Maps enrichment, Firestore write) must still
+        # transition the trip out of PLANNING so the client stops waiting.
+        log.error("trip.failed.unexpected", trip_id=trip.id, error=str(exc))
+        try:
+            fs.update_status(trip.user_id, trip.id, TripStatus.FAILED)
+        except Exception:  # noqa: BLE001 — last-resort guard; nothing else we can do
+            log.error("trip.failed.status_update_failed", trip_id=trip.id)
 
 
 @router.get("/{trip_id}", response_model=Trip)
@@ -123,13 +132,17 @@ async def list_trips(
 @router.post("/{trip_id}/events", status_code=status.HTTP_202_ACCEPTED)
 async def push_event(
     trip_id: str,
-    body: dict,
+    body: TripEventRequest,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     fs: Annotated[FirestoreService, Depends(_firestore)],
     pubsub: Annotated[PubSubService, Depends(_pubsub)],
-) -> dict:
+) -> dict[str, str]:
     """
     Inject a real-time event (user-edit, weather, flight delay).
+
+    The body is validated against `TripEventRequest`, so an unknown event type,
+    an extra field, or an oversized payload is rejected with 422 automatically
+    — the endpoint no longer parses a free-form dict by hand.
 
     The user-edit type is the user changing the plan; weather/flight come from
     Cloud Scheduler / webhooks. All paths funnel through Pub/Sub so the same
@@ -139,16 +152,11 @@ async def push_event(
     if trip is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "trip not found")
 
-    try:
-        event_type = EventType(body.get("type", ""))
-    except ValueError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid event type") from exc
-
     event = TripEvent(
-        type=event_type,
+        type=body.type,
         trip_id=trip_id,
-        payload=body.get("payload", {}),
-        occurred_at=datetime.now(tz=timezone.utc),
+        payload=body.payload,
+        occurred_at=datetime.now(tz=UTC),
     )
     fs.update_status(user.uid, trip_id, TripStatus.UPDATING)
     msg_id = pubsub.publish_event(event)

@@ -20,6 +20,10 @@ os.environ.setdefault("AUTH_DISABLED", "true")
 os.environ.setdefault("GCP_PROJECT", "test-project")
 os.environ.setdefault("GEMINI_API_KEY", "test-key")
 os.environ.setdefault("FIREBASE_PROJECT_ID", "test-project")
+# Effectively disable rate limiting for the default fixtures so the shared
+# test-client IP is never throttled; the dedicated rate-limit test builds its
+# own app with a low limit to exercise enforcement.
+os.environ.setdefault("RATE_LIMIT_PER_MINUTE", "100000")
 
 from app.main import create_app  # noqa: E402
 from app.models import (  # noqa: E402
@@ -29,7 +33,6 @@ from app.models import (  # noqa: E402
     Itinerary,
     Preferences,
     TripRequest,
-    TripStatus,
 )
 
 

@@ -4,7 +4,11 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "S", "A", "C4", "RET", "SIM"]
-ignore = ["S101"]  # asserts ok in tests
+# S101: asserts are fine (esp. in tests).
+# N818: domain exceptions (GeminiUnavailable/GeminiTransient) read better
+#       without a forced "Error" suffix — the stdlib itself ships SystemExit,
+#       KeyboardInterrupt, StopIteration, etc.
+ignore = ["S101", "N818"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S105", "S106"]
@@ -14,6 +18,17 @@ python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
 exclude = ["tests/", "build/"]
+
+# Third-party SDKs that ship no type stubs / py.typed marker. Without this,
+# strict mode floods with import-untyped noise for code we do not own.
+[[tool.mypy.overrides]]
+module = [
+    "google.*",
+    "firebase_admin.*",
+    "googlemaps.*",
+    "slowapi.*",
+]
+ignore_missing_imports = true
 
 [tool.coverage.run]
 branch = true

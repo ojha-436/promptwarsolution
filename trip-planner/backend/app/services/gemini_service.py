@@ -54,7 +54,52 @@ Rules — non-negotiable:
 
 
 class GeminiUnavailable(Exception):
-    """Raised after retries are exhausted."""
+    """Raised on a permanent failure (bad output, 4xx, or exhausted retries)."""
+
+
+class GeminiTransient(GeminiUnavailable):
+    """
+    A retryable failure — network hiccup, 5xx, or 429 rate-limit. Subclass of
+    GeminiUnavailable so a caller that catches the base class still handles the
+    final give-up after retries are exhausted.
+    """
+
+
+# Substrings that mark a transient (worth-retrying) error when no status code
+# is available on the raised exception.
+_TRANSIENT_MARKERS = (
+    "timeout",
+    "deadline",
+    "unavailable",
+    "connection",
+    "reset",
+    "temporarily",
+    "resource exhausted",
+    "rate limit",
+    "429",
+    "500",
+    "502",
+    "503",
+    "504",
+)
+
+
+def _is_transient(exc: Exception) -> bool:
+    """
+    Classify an exception from the Gemini SDK as transient (retryable) or not.
+
+    5xx and 429 are retryable; deterministic 4xx (bad request, auth) are not.
+    Falls back to string matching when the SDK error carries no status code.
+    """
+    if isinstance(exc, TimeoutError | ConnectionError):
+        return True
+    code = getattr(exc, "code", None)
+    if not isinstance(code, int):
+        code = getattr(exc, "status_code", None)
+    if isinstance(code, int):
+        return code == 429 or 500 <= code < 600
+    message = str(exc).lower()
+    return any(marker in message for marker in _TRANSIENT_MARKERS)
 
 
 class GeminiService:
@@ -65,7 +110,9 @@ class GeminiService:
         self._client = client or genai.Client(api_key=settings.GEMINI_API_KEY)
 
     @retry(
-        retry=retry_if_exception_type((TimeoutError, ConnectionError)),
+        # Retry only genuinely transient failures. Permanent errors (bad JSON,
+        # 4xx) raise GeminiUnavailable and short-circuit immediately.
+        retry=retry_if_exception_type(GeminiTransient),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -76,9 +123,12 @@ class GeminiService:
 
         Raises GeminiUnavailable on persistent failure or schema mismatch
         — callers should mark the trip as FAILED and surface a friendly error.
+        Transient failures (5xx/429/network) are retried up to 3 times with
+        exponential backoff before being re-raised.
         """
         prompt = self._build_user_prompt(req)
-        log.info("gemini.request", destination=req.destination, days=(req.end_date - req.start_date).days + 1)
+        num_days = (req.end_date - req.start_date).days + 1
+        log.info("gemini.request", destination=req.destination, days=num_days)
 
         try:
             response = self._client.models.generate_content(
@@ -91,7 +141,10 @@ class GeminiService:
                     max_output_tokens=self._settings.GEMINI_MAX_OUTPUT_TOKENS,
                 ),
             )
-        except Exception as exc:  # pragma: no cover — defensive
+        except Exception as exc:
+            if _is_transient(exc):
+                log.warning("gemini.transient", error=str(exc))
+                raise GeminiTransient(str(exc)) from exc
             log.error("gemini.error", error=str(exc))
             raise GeminiUnavailable(str(exc)) from exc
 

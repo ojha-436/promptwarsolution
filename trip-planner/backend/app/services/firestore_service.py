@@ -10,9 +10,9 @@ simple — `request.auth.uid == userId` is enough to isolate tenants.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from google.cloud import firestore  # type: ignore[attr-defined]
+from google.cloud import firestore
 
 from app.models import Trip, TripStatus
 from app.utils.logger import get_logger
@@ -25,7 +25,12 @@ class FirestoreService:
         self._client = client or firestore.Client()
 
     def _doc_ref(self, user_id: str, trip_id: str) -> firestore.DocumentReference:
-        return self._client.collection("users").document(user_id).collection("trips").document(trip_id)
+        return (
+            self._client.collection("users")
+            .document(user_id)
+            .collection("trips")
+            .document(trip_id)
+        )
 
     def save(self, trip: Trip) -> None:
         log.info("firestore.save", trip_id=trip.id, user_id=trip.user_id, status=trip.status)
@@ -43,7 +48,7 @@ class FirestoreService:
         self._doc_ref(user_id, trip_id).update(
             {
                 "status": status.value,
-                "updated_at": datetime.now(tz=timezone.utc).isoformat(),
+                "updated_at": datetime.now(tz=UTC).isoformat(),
             }
         )
 

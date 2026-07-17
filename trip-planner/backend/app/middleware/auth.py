@@ -15,9 +15,12 @@ from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
-from firebase_admin import auth as fb_auth  # type: ignore[import-untyped]
+from firebase_admin import auth as fb_auth
 
 from app.config import Settings, get_settings
+from app.utils.logger import get_logger
+
+log = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -28,8 +31,8 @@ class AuthenticatedUser:
 
 
 def get_current_user(
+    settings: Annotated[Settings, Depends(get_settings)],
     authorization: Annotated[str | None, Header()] = None,
-    settings: Settings = Depends(get_settings),
 ) -> AuthenticatedUser:
     """FastAPI dependency. Raises 401 on any auth failure."""
     if settings.AUTH_DISABLED:  # tests only
@@ -49,7 +52,10 @@ def get_current_user(
         fb_auth.InvalidIdTokenError,
         ValueError,
     ) as exc:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"invalid token: {exc}") from exc
+        # Log the specific reason server-side, but return a generic message so
+        # token-validation internals are never disclosed to the client.
+        log.info("auth.rejected", reason=type(exc).__name__)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid or expired token") from exc
 
     return AuthenticatedUser(
         uid=decoded["uid"],

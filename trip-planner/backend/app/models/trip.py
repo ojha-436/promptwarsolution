@@ -15,7 +15,6 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-
 # ── Enums ──────────────────────────────────────────────────────────────────
 
 
@@ -184,3 +183,34 @@ class TripEvent(BaseModel):
     trip_id: str
     payload: dict[str, str | int | float | bool] = Field(default_factory=dict)
     occurred_at: datetime
+
+
+class TripEventRequest(BaseModel):
+    """
+    Client payload for POST /v1/trips/{id}/events.
+
+    Strictly typed (like every other request boundary) so an unknown `type`,
+    an unexpected field, or an oversized `payload` is rejected with 422 before
+    any Firestore write or Pub/Sub publish happens — closing the one endpoint
+    that previously accepted a free-form dict.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: EventType
+    payload: dict[str, str | int | float | bool] = Field(default_factory=dict)
+
+    @field_validator("payload")
+    @classmethod
+    def _bound_payload(
+        cls, v: dict[str, str | int | float | bool]
+    ) -> dict[str, str | int | float | bool]:
+        """Cap the payload size and key/value lengths to prevent abuse."""
+        if len(v) > 20:
+            raise ValueError("payload may not exceed 20 keys")
+        for key, value in v.items():
+            if len(key) > 64:
+                raise ValueError("payload key exceeds 64 characters")
+            if isinstance(value, str) and len(value) > 500:
+                raise ValueError("payload string value exceeds 500 characters")
+        return v
